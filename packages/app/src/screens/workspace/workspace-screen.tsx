@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  ActivityIndicator,
   BackHandler,
   Platform,
   Pressable,
@@ -10,13 +9,14 @@ import {
 } from "react-native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
-import { ChevronDown, Plus, Terminal } from "lucide-react-native";
+import { Bot, ChevronDown, Plus, Terminal } from "lucide-react-native";
 import { GestureDetector } from "react-native-gesture-handler";
 import { StyleSheet, UnistylesRuntime, useUnistyles } from "react-native-unistyles";
 import { SidebarMenuToggle } from "@/components/headers/menu-header";
 import { ScreenHeader } from "@/components/headers/screen-header";
 import { Combobox } from "@/components/ui/combobox";
-import { AgentStatusDot } from "@/components/agent-status-dot";
+import { ClaudeIcon } from "@/components/icons/claude-icon";
+import { CodexIcon } from "@/components/icons/codex-icon";
 import { ExplorerSidebar } from "@/components/explorer-sidebar";
 import { TerminalPane } from "@/components/terminal-pane";
 import { ExplorerSidebarAnimationProvider } from "@/contexts/explorer-sidebar-animation-context";
@@ -38,13 +38,15 @@ import {
   checkoutStatusQueryKey,
   type CheckoutStatusPayload,
 } from "@/hooks/use-checkout-status-query";
-import { deriveBranchLabel } from "@/utils/agent-display-info";
 import { AgentReadyScreen } from "@/screens/agent/agent-ready-screen";
 import type { ListTerminalsResponse } from "@server/shared/messages";
 import { upsertTerminalListEntry } from "@/utils/terminal-list";
 
 const TERMINALS_QUERY_STALE_TIME = 5_000;
-const CREATE_TERMINAL_SWITCHER_ID = "__create_terminal__";
+const NEW_TAB_AGENT_OPTION_ID = "__new_tab_agent__";
+const NEW_TAB_TERMINAL_OPTION_ID = "__new_tab_terminal__";
+
+type TabAvailability = "available" | "invalid" | "unknown";
 
 type RouteTabTarget = WorkspaceTabTarget | null;
 
@@ -59,6 +61,7 @@ type WorkspaceTabDescriptor =
       key: string;
       kind: "agent";
       agentId: string;
+      provider: Agent["provider"];
       label: string;
       subtitle: string;
     }
@@ -91,6 +94,35 @@ function deriveWorkspaceName(workspaceId: string): string {
   const segments = normalized.split("/").filter(Boolean);
   const last = segments[segments.length - 1];
   return last ?? workspaceId;
+}
+
+function deriveWorkspaceHeaderTitle(input: {
+  workspaceName: string;
+  checkout: CheckoutStatusPayload | null;
+}): string {
+  if (!input.checkout?.isGit) {
+    return input.workspaceName;
+  }
+
+  const branch = trimNonEmpty(input.checkout.currentBranch ?? null);
+  if (!branch || branch === "HEAD") {
+    return input.workspaceName;
+  }
+
+  return branch;
+}
+
+function formatProviderLabel(provider: Agent["provider"]): string {
+  if (provider === "claude") {
+    return "Claude";
+  }
+  if (provider === "codex") {
+    return "Codex";
+  }
+  if (!provider) {
+    return "Agent";
+  }
+  return provider.charAt(0).toUpperCase() + provider.slice(1);
 }
 
 function normalizeWorkspaceTab(
@@ -151,15 +183,23 @@ function buildTabRoute(input: {
   );
 }
 
-function isTabAvailable(input: {
+function resolveTabAvailability(input: {
   tab: WorkspaceTabTarget;
+  agentsHydrated: boolean;
+  terminalsHydrated: boolean;
   agentsById: Map<string, Agent>;
   terminalIds: Set<string>;
-}): boolean {
+}): TabAvailability {
   if (input.tab.kind === "agent") {
-    return input.agentsById.has(input.tab.agentId);
+    if (!input.agentsHydrated) {
+      return "unknown";
+    }
+    return input.agentsById.has(input.tab.agentId) ? "available" : "invalid";
   }
-  return input.terminalIds.has(input.tab.terminalId);
+  if (!input.terminalsHydrated) {
+    return "unknown";
+  }
+  return input.terminalIds.has(input.tab.terminalId) ? "available" : "invalid";
 }
 
 function sortAgentsByCreatedAtDescending(agents: Agent[]): Agent[] {
@@ -330,13 +370,20 @@ function WorkspaceScreenContent({
     () => deriveWorkspaceName(normalizedWorkspaceId),
     [normalizedWorkspaceId]
   );
-  const branchLabel = useMemo(
-    () => deriveBranchLabel(checkoutQuery.data ?? null),
-    [checkoutQuery.data]
+  const headerTitle = useMemo(
+    () =>
+      deriveWorkspaceHeaderTitle({
+        workspaceName,
+        checkout: checkoutQuery.data ?? null,
+      }),
+    [checkoutQuery.data, workspaceName]
   );
-  const headerTitle = branchLabel ?? workspaceName;
 
   const isGitCheckout = checkoutQuery.data?.isGit ?? false;
+  const areWorkspaceAgentsHydrated = useSessionStore(
+    (state) => state.sessions[normalizedServerId]?.hasHydratedAgents ?? false
+  );
+  const areWorkspaceTerminalsHydrated = terminalsQuery.isSuccess;
 
   const mobileView = usePanelStore((state) => state.mobileView);
   const desktopFileExplorerOpen = usePanelStore(
@@ -411,8 +458,9 @@ function WorkspaceScreenContent({
         key: `agent:${agent.id}`,
         kind: "agent",
         agentId: agent.id,
+        provider: agent.provider,
         label: agent.title?.trim() || "New agent",
-        subtitle: "Agent",
+        subtitle: `${formatProviderLabel(agent.provider)} agent`,
       });
     }
 
@@ -475,31 +523,75 @@ function WorkspaceScreenContent({
     return { kind: "terminal", terminalId: first.terminalId };
   }, [tabs]);
 
+  const requestedTabAvailability = useMemo<TabAvailability | null>(() => {
+    if (!requestedTab) {
+      return null;
+    }
+    return resolveTabAvailability({
+      tab: requestedTab,
+      agentsHydrated: areWorkspaceAgentsHydrated,
+      terminalsHydrated: areWorkspaceTerminalsHydrated,
+      agentsById,
+      terminalIds,
+    });
+  }, [
+    agentsById,
+    areWorkspaceAgentsHydrated,
+    areWorkspaceTerminalsHydrated,
+    requestedTab,
+    terminalIds,
+  ]);
+
+  const storedTabAvailability = useMemo<TabAvailability | null>(() => {
+    if (!storedTab) {
+      return null;
+    }
+    return resolveTabAvailability({
+      tab: storedTab,
+      agentsHydrated: areWorkspaceAgentsHydrated,
+      terminalsHydrated: areWorkspaceTerminalsHydrated,
+      agentsById,
+      terminalIds,
+    });
+  }, [
+    agentsById,
+    areWorkspaceAgentsHydrated,
+    areWorkspaceTerminalsHydrated,
+    storedTab,
+    terminalIds,
+  ]);
+
   const resolvedTab = useMemo<WorkspaceTabTarget | null>(() => {
-    if (
-      requestedTab &&
-      isTabAvailable({
-        tab: requestedTab,
-        agentsById,
-        terminalIds,
-      })
-    ) {
+    if (requestedTab && requestedTabAvailability !== "invalid") {
       return requestedTab;
     }
 
-    if (
-      storedTab &&
-      isTabAvailable({
-        tab: storedTab,
-        agentsById,
-        terminalIds,
-      })
-    ) {
+    if (storedTab && storedTabAvailability !== "invalid") {
       return storedTab;
     }
 
     return fallbackTab;
-  }, [agentsById, fallbackTab, requestedTab, storedTab, terminalIds]);
+  }, [fallbackTab, requestedTab, requestedTabAvailability, storedTab, storedTabAvailability]);
+
+  const resolvedTabAvailability = useMemo<TabAvailability | null>(() => {
+    if (!resolvedTab) {
+      return null;
+    }
+
+    return resolveTabAvailability({
+      tab: resolvedTab,
+      agentsHydrated: areWorkspaceAgentsHydrated,
+      terminalsHydrated: areWorkspaceTerminalsHydrated,
+      agentsById,
+      terminalIds,
+    });
+  }, [
+    agentsById,
+    areWorkspaceAgentsHydrated,
+    areWorkspaceTerminalsHydrated,
+    resolvedTab,
+    terminalIds,
+  ]);
 
   const navigateToTab = useCallback(
     (tab: WorkspaceTabTarget) => {
@@ -531,6 +623,9 @@ function WorkspaceScreenContent({
     if (!resolvedTab) {
       return;
     }
+    if (resolvedTabAvailability !== "available") {
+      return;
+    }
 
     setLastFocusedTab({
       serverId: normalizedServerId,
@@ -541,6 +636,7 @@ function WorkspaceScreenContent({
     normalizedServerId,
     normalizedWorkspaceId,
     resolvedTab,
+    resolvedTabAvailability,
     setLastFocusedTab,
   ]);
 
@@ -569,7 +665,9 @@ function WorkspaceScreenContent({
   ]);
 
   const [isTabSwitcherOpen, setIsTabSwitcherOpen] = useState(false);
+  const [isNewTabMenuOpen, setIsNewTabMenuOpen] = useState(false);
   const tabSwitcherAnchorRef = useRef<View>(null);
+  const newTabAnchorRef = useRef<View>(null);
 
   const tabByKey = useMemo(() => {
     const map = new Map<string, WorkspaceTabTarget>();
@@ -595,19 +693,28 @@ function WorkspaceScreenContent({
 
   const tabSwitcherOptions = useMemo(
     () =>
-      [
-        ...tabs.map((tab) => ({
-          id: tab.key,
-          label: tab.label,
-          description: tab.subtitle,
-        })),
-        {
-          id: CREATE_TERMINAL_SWITCHER_ID,
-          label: "New terminal",
-          description: "Create",
-        },
-      ],
+      tabs.map((tab) => ({
+        id: tab.key,
+        label: tab.label,
+        description: tab.subtitle,
+      })),
     [tabs]
+  );
+
+  const newTabOptions = useMemo(
+    () => [
+      {
+        id: NEW_TAB_AGENT_OPTION_ID,
+        label: "Agent tab",
+        description: "Open the draft agent flow for this workspace",
+      },
+      {
+        id: NEW_TAB_TERMINAL_OPTION_ID,
+        label: "Terminal tab",
+        description: "Create a new terminal in this workspace",
+      },
+    ],
+    []
   );
 
   const activeTabLabel = useMemo(() => {
@@ -625,6 +732,9 @@ function WorkspaceScreenContent({
   }, [normalizedServerId, normalizedWorkspaceId, router]);
 
   const handleCreateTerminal = useCallback(() => {
+    if (createTerminalMutation.isPending) {
+      return;
+    }
     if (!normalizedWorkspaceId.startsWith("/")) {
       return;
     }
@@ -633,11 +743,6 @@ function WorkspaceScreenContent({
 
   const handleSelectSwitcherTab = useCallback(
     (key: string) => {
-      if (key === CREATE_TERMINAL_SWITCHER_ID) {
-        setIsTabSwitcherOpen(false);
-        handleCreateTerminal();
-        return;
-      }
       const tab = tabByKey.get(key);
       if (!tab) {
         return;
@@ -645,7 +750,21 @@ function WorkspaceScreenContent({
       setIsTabSwitcherOpen(false);
       navigateToTab(tab);
     },
-    [handleCreateTerminal, navigateToTab, tabByKey]
+    [navigateToTab, tabByKey]
+  );
+
+  const handleSelectNewTabOption = useCallback(
+    (key: string) => {
+      setIsNewTabMenuOpen(false);
+      if (key === NEW_TAB_AGENT_OPTION_ID) {
+        handleCreateAgent();
+        return;
+      }
+      if (key === NEW_TAB_TERMINAL_OPTION_ID) {
+        handleCreateTerminal();
+      }
+    },
+    [handleCreateAgent, handleCreateTerminal]
   );
 
   const renderContent = () => {
@@ -653,31 +772,8 @@ function WorkspaceScreenContent({
       return (
         <View style={styles.emptyState}>
           <Text style={styles.emptyStateText}>
-            No agent or terminal tabs are available for this workspace.
+            No tabs are available yet. Use New tab to create an agent or terminal.
           </Text>
-          <Pressable
-            style={({ hovered, pressed }) => [
-              styles.emptyStateButton,
-              (hovered || pressed) && styles.emptyStateButtonActive,
-            ]}
-            onPress={handleCreateAgent}
-          >
-            <Text style={styles.emptyStateButtonText}>Create agent</Text>
-          </Pressable>
-          <Pressable
-            style={({ hovered, pressed }) => [
-              styles.emptyStateButton,
-              (hovered || pressed) && styles.emptyStateButtonActive,
-            ]}
-            onPress={handleCreateTerminal}
-            disabled={createTerminalMutation.isPending}
-          >
-            {createTerminalMutation.isPending ? (
-              <ActivityIndicator size="small" color={theme.colors.foregroundMuted} />
-            ) : (
-              <Text style={styles.emptyStateButtonText}>Create terminal</Text>
-            )}
-          </Pressable>
         </View>
       );
     }
@@ -741,16 +837,19 @@ function WorkspaceScreenContent({
             ) : null}
 
             <Pressable
-              testID="workspace-header-plus"
+              ref={newTabAnchorRef}
+              testID="workspace-new-tab"
               style={({ hovered, pressed }) => [
-                styles.plusButton,
-                (hovered || pressed) && styles.plusButtonActive,
+                styles.newTabButton,
+                (hovered || pressed) && styles.newTabButtonActive,
               ]}
-              onPress={handleCreateAgent}
+              onPress={() => setIsNewTabMenuOpen(true)}
               accessibilityRole="button"
-              accessibilityLabel="Create agent"
+              accessibilityLabel="New tab"
             >
-              <Plus size={theme.iconSize.md} color={theme.colors.foregroundMuted} />
+              <Plus size={theme.iconSize.sm} color={theme.colors.foregroundMuted} />
+              <Text style={styles.newTabButtonText}>New tab</Text>
+              <ChevronDown size={theme.iconSize.sm} color={theme.colors.foregroundMuted} />
             </Pressable>
 
             {isMobile ? (
@@ -766,6 +865,18 @@ function WorkspaceScreenContent({
                 anchorRef={tabSwitcherAnchorRef}
               />
             ) : null}
+
+            <Combobox
+              options={newTabOptions}
+              value=""
+              onSelect={handleSelectNewTabOption}
+              searchable={false}
+              title="New tab"
+              searchPlaceholder="Search tab types"
+              open={isNewTabMenuOpen}
+              onOpenChange={setIsNewTabMenuOpen}
+              anchorRef={newTabAnchorRef}
+            />
           </View>
         }
       />
@@ -780,14 +891,20 @@ function WorkspaceScreenContent({
           >
             {tabs.map((tab) => {
               const isActive = tab.key === activeTabKey;
+              const iconColor = isActive
+                ? theme.colors.foreground
+                : theme.colors.foregroundMuted;
               const icon =
                 tab.kind === "agent" ? (
-                  <AgentStatusDot
-                    status={agentsById.get(tab.agentId)?.status ?? "idle"}
-                    requiresAttention={agentsById.get(tab.agentId)?.requiresAttention ?? false}
-                  />
+                  tab.provider === "claude" ? (
+                    <ClaudeIcon size={14} color={iconColor} />
+                  ) : tab.provider === "codex" ? (
+                    <CodexIcon size={14} color={iconColor} />
+                  ) : (
+                    <Bot size={14} color={iconColor} />
+                  )
                 ) : (
-                  <Terminal size={14} color={theme.colors.foregroundMuted} />
+                  <Terminal size={14} color={iconColor} />
                 );
 
               return (
@@ -820,28 +937,6 @@ function WorkspaceScreenContent({
               );
             })}
           </ScrollView>
-          <Pressable
-            testID="workspace-create-terminal"
-            accessibilityRole="button"
-            accessibilityLabel="Create terminal"
-            onPress={handleCreateTerminal}
-            disabled={createTerminalMutation.isPending}
-            style={({ hovered, pressed }) => [
-              styles.createTerminalButton,
-              (hovered || pressed) && styles.createTerminalButtonActive,
-            ]}
-          >
-            {createTerminalMutation.isPending ? (
-              <ActivityIndicator size="small" color={theme.colors.foregroundMuted} />
-            ) : (
-              <View style={styles.createTerminalIcon}>
-                <Terminal size={16} color={theme.colors.foregroundMuted} />
-                <View style={styles.createTerminalPlusIcon}>
-                  <Plus size={10} color={theme.colors.foregroundMuted} />
-                </View>
-              </View>
-            )}
-          </Pressable>
         </View>
       ) : null}
 
@@ -884,15 +979,22 @@ const styles = StyleSheet.create((theme) => ({
     alignItems: "center",
     gap: theme.spacing[2],
   },
-  plusButton: {
-    padding: {
-      xs: theme.spacing[3],
-      md: theme.spacing[2],
-    },
-    borderRadius: theme.borderRadius.lg,
+  newTabButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing[1],
+    paddingHorizontal: theme.spacing[2],
+    paddingVertical: theme.spacing[1],
+    borderRadius: theme.borderRadius.md,
+    borderWidth: theme.borderWidth[1],
+    borderColor: theme.colors.border,
   },
-  plusButtonActive: {
+  newTabButtonActive: {
     backgroundColor: theme.colors.surface2,
+  },
+  newTabButtonText: {
+    color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.sm,
   },
   switcherTrigger: {
     maxWidth: 220,
@@ -918,8 +1020,6 @@ const styles = StyleSheet.create((theme) => ({
     borderBottomWidth: 1,
     borderBottomColor: theme.colors.border,
     backgroundColor: theme.colors.surface0,
-    flexDirection: "row",
-    alignItems: "center",
   },
   tabsScroll: {
     flex: 1,
@@ -962,25 +1062,6 @@ const styles = StyleSheet.create((theme) => ({
   tabLabelActive: {
     color: theme.colors.foreground,
   },
-  createTerminalButton: {
-    paddingHorizontal: theme.spacing[3],
-    paddingVertical: theme.spacing[2],
-    marginRight: theme.spacing[2],
-    borderRadius: theme.borderRadius.md,
-  },
-  createTerminalButtonActive: {
-    backgroundColor: theme.colors.surface2,
-  },
-  createTerminalIcon: {
-    position: "relative",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  createTerminalPlusIcon: {
-    position: "absolute",
-    top: -6,
-    right: -6,
-  },
   content: {
     flex: 1,
     minHeight: 0,
@@ -995,19 +1076,5 @@ const styles = StyleSheet.create((theme) => ({
   emptyStateText: {
     color: theme.colors.foregroundMuted,
     textAlign: "center",
-  },
-  emptyStateButton: {
-    borderRadius: theme.borderRadius.md,
-    borderWidth: theme.borderWidth[1],
-    borderColor: theme.colors.border,
-    paddingHorizontal: theme.spacing[4],
-    paddingVertical: theme.spacing[2],
-  },
-  emptyStateButtonActive: {
-    backgroundColor: theme.colors.surface2,
-  },
-  emptyStateButtonText: {
-    color: theme.colors.foreground,
-    fontWeight: theme.fontWeight.medium,
   },
 }));
