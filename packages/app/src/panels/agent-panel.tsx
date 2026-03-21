@@ -20,6 +20,7 @@ import {
 } from "@/hooks/use-agent-screen-state-machine";
 import { useArchiveAgent } from "@/hooks/use-archive-agent";
 import { useDelayedHistoryRefreshToast } from "@/hooks/use-delayed-history-refresh-toast";
+import { useAgentInputDraft } from "@/hooks/use-agent-input-draft";
 import { useKeyboardShiftStyle } from "@/hooks/use-keyboard-shift-style";
 import { usePaneContext } from "@/panels/pane-context";
 import type { PanelDescriptor, PanelRegistration } from "@/panels/panel-registry";
@@ -42,6 +43,7 @@ import {
 import { mergePendingCreateImages } from "@/utils/pending-create-images";
 import { deriveSidebarStateBucket } from "@/utils/sidebar-agent-state";
 import { useCreateFlowStore } from "@/stores/create-flow-store";
+import { buildDraftStoreKey } from "@/stores/draft-keys";
 import { useSessionStore, type Agent } from "@/stores/session-store";
 import type { PendingPermission } from "@/types/shared";
 import type { StreamItem } from "@/types/stream";
@@ -234,6 +236,12 @@ function AgentPanelBody({
     routeKey: string;
     reason: "initial-entry" | "resume";
   } | null>(null);
+  const agentInputDraft = useAgentInputDraft(
+    buildDraftStoreKey({
+      serverId,
+      agentId: agentId ?? "__pending__",
+    })
+  );
 
   const handleFilesDropped = useCallback((files: ImageAttachment[]) => {
     addImagesRef.current?.(files);
@@ -851,6 +859,11 @@ function AgentPanelBody({
             <AgentInputArea
               agentId={agentId}
               serverId={serverId}
+              value={agentInputDraft.text}
+              onChangeText={agentInputDraft.setText}
+              images={agentInputDraft.images}
+              onChangeImages={agentInputDraft.setImages}
+              clearDraft={agentInputDraft.clear}
               autoFocus={isPaneFocused}
               isSubmitLoading={showPendingCreateSubmitLoading}
               onAttentionInputFocus={attentionController.clearOnInputFocus}

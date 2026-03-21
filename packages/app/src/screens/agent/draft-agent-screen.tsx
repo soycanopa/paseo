@@ -32,7 +32,7 @@ import { collectAgentWorkingDirectorySuggestions } from '@/utils/agent-working-d
 import { buildWorkingDirectorySuggestions } from '@/utils/working-directory-suggestions'
 import { useExplorerOpenGesture } from '@/hooks/use-explorer-open-gesture'
 import { useSessionStore } from '@/stores/session-store'
-import { generateDraftId } from '@/stores/draft-keys'
+import { buildDraftStoreKey, generateDraftId } from '@/stores/draft-keys'
 import { getHostRuntimeStore, useHostRuntimeClient, useHostRuntimeIsConnected } from '@/runtime/host-runtime'
 import { ExplorerSidebarAnimationProvider } from '@/contexts/explorer-sidebar-animation-context'
 import { usePanelStore, type ExplorerCheckoutContext } from '@/stores/panel-store'
@@ -50,6 +50,7 @@ import { prepareWorkspaceTab } from '@/utils/workspace-navigation'
 import { useDesktopDragHandlers } from '@/utils/desktop-window'
 import { useKeyboardShiftStyle } from '@/hooks/use-keyboard-shift-style'
 import { normalizeAgentSnapshot } from '@/utils/agent-snapshots'
+import { useAgentInputDraft } from '@/hooks/use-agent-input-draft'
 import { useDraftAgentCreateFlow } from '@/hooks/use-draft-agent-create-flow'
 
 const EMPTY_PENDING_PERMISSIONS = new Map()
@@ -242,6 +243,13 @@ function DraftAgentScreenContent({
   const isExplorerOpen = isMobile ? mobileView === 'file-explorer' : desktopFileExplorerOpen
   const draftIdRef = useRef(generateDraftId())
   const draftAgentIdRef = useRef(generateDraftId())
+  const draftInput = useAgentInputDraft(
+    buildDraftStoreKey({
+      serverId: selectedServerId ?? '',
+      agentId: draftAgentIdRef.current,
+      draftId: draftIdRef.current,
+    })
+  )
 
   const [worktreeMode, setWorktreeMode] = useState<'none' | 'create' | 'attach'>(
     initialWorktreeMode
@@ -766,12 +774,10 @@ function DraftAgentScreenContent({
   ])
 
   const {
-    promptValue,
     formErrorMessage,
     isSubmitting,
     optimisticStreamItems,
     draftAgent,
-    setPromptText,
     handleCreateFromInput,
   } = useDraftAgentCreateFlow<Agent, { id: string; cwd: string }>({
     draftId: draftIdRef.current,
@@ -1184,12 +1190,14 @@ function DraftAgentScreenContent({
               onSubmitMessage={handleCreateFromInput}
               isSubmitLoading={isSubmitting}
               blurOnSubmit={true}
-              value={promptValue}
-              onChangeText={setPromptText}
+              value={draftInput.text}
+              onChangeText={draftInput.setText}
+              images={draftInput.images}
+              onChangeImages={draftInput.setImages}
+              clearDraft={draftInput.clear}
               autoFocus={!isSubmitting}
               onAddImages={handleAddImagesCallback}
               commandDraftConfig={draftCommandConfig}
-              draftId={draftIdRef.current}
               statusControls={{
                 providerDefinitions,
                 selectedProvider,

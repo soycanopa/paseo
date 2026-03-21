@@ -12,11 +12,10 @@ type CreateAttempt = {
 }
 
 type DraftAgentMachineState =
-  | { tag: 'draft'; promptText: string; errorMessage: string }
+  | { tag: 'draft'; errorMessage: string }
   | { tag: 'creating'; attempt: CreateAttempt }
 
 type DraftAgentMachineEvent =
-  | { type: 'DRAFT_SET_PROMPT'; text: string }
   | { type: 'DRAFT_SET_ERROR'; message: string }
   | { type: 'SUBMIT'; attempt: CreateAttempt }
   | { type: 'CREATE_FAILED'; message: string }
@@ -27,12 +26,6 @@ function assertNever(value: never): never {
 
 function reducer(state: DraftAgentMachineState, event: DraftAgentMachineEvent): DraftAgentMachineState {
   switch (event.type) {
-    case 'DRAFT_SET_PROMPT': {
-      if (state.tag !== 'draft') {
-        return state
-      }
-      return { ...state, promptText: event.text }
-    }
     case 'DRAFT_SET_ERROR': {
       if (state.tag !== 'draft') {
         return state
@@ -46,7 +39,7 @@ function reducer(state: DraftAgentMachineState, event: DraftAgentMachineEvent): 
       if (state.tag !== 'creating') {
         return state
       }
-      return { tag: 'draft', promptText: state.attempt.text, errorMessage: event.message }
+      return { tag: 'draft', errorMessage: event.message }
     }
     default:
       return assertNever(event)
@@ -94,7 +87,6 @@ export function useDraftAgentCreateFlow<TDraftAgent, TCreateResult>({
 }: UseDraftAgentCreateFlowOptions<TDraftAgent, TCreateResult>) {
   const [machine, dispatch] = useReducer(reducer, {
     tag: 'draft',
-    promptText: '',
     errorMessage: '',
   } as DraftAgentMachineState)
 
@@ -103,7 +95,6 @@ export function useDraftAgentCreateFlow<TDraftAgent, TCreateResult>({
   const markPendingCreateLifecycle = useCreateFlowStore((state) => state.markLifecycle)
   const clearPendingCreateAttempt = useCreateFlowStore((state) => state.clear)
 
-  const promptValue = machine.tag === 'draft' ? machine.promptText : ''
   const formErrorMessage = machine.tag === 'draft' ? machine.errorMessage : ''
   const isSubmitting = machine.tag === 'creating'
 
@@ -131,10 +122,6 @@ export function useDraftAgentCreateFlow<TDraftAgent, TCreateResult>({
     }
     return buildDraftAgent(machine.attempt)
   }, [buildDraftAgent, machine])
-
-  const setPromptText = useCallback((text: string) => {
-    dispatch({ type: 'DRAFT_SET_PROMPT', text })
-  }, [])
 
   const handleCreateFromInput = useCallback(
     async ({ text, images }: SubmitContext) => {
@@ -226,12 +213,10 @@ export function useDraftAgentCreateFlow<TDraftAgent, TCreateResult>({
 
   return {
     machine,
-    promptValue,
     formErrorMessage,
     isSubmitting,
     optimisticStreamItems,
     draftAgent,
-    setPromptText,
     handleCreateFromInput,
   }
 }

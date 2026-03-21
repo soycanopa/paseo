@@ -6,8 +6,10 @@ import { FileDropZone } from '@/components/file-drop-zone'
 import { AgentStreamView } from '@/components/agent-stream-view'
 import type { ImageAttachment } from '@/components/message-input'
 import { useAgentFormState } from '@/hooks/use-agent-form-state'
+import { useAgentInputDraft } from '@/hooks/use-agent-input-draft'
 import { useDraftAgentCreateFlow } from '@/hooks/use-draft-agent-create-flow'
 import { useHostRuntimeClient, useHostRuntimeIsConnected } from '@/runtime/host-runtime'
+import { buildDraftStoreKey } from '@/stores/draft-keys'
 import type { Agent } from '@/stores/session-store'
 import { encodeImages } from '@/utils/encode-images'
 import type { AgentCapabilityFlags, AgentSessionConfig } from '@server/server/agent/agent-sdk-types'
@@ -43,6 +45,13 @@ export function WorkspaceDraftAgentTab({
   const client = useHostRuntimeClient(serverId)
   const isConnected = useHostRuntimeIsConnected(serverId)
   const addImagesRef = useRef<((images: ImageAttachment[]) => void) | null>(null)
+  const draftInput = useAgentInputDraft(
+    buildDraftStoreKey({
+      serverId,
+      agentId: tabId,
+      draftId,
+    })
+  )
 
   const {
     selectedProvider,
@@ -81,12 +90,10 @@ export function WorkspaceDraftAgentTab({
   }, [setWorkingDir, workingDir, workspaceId])
 
   const {
-    promptValue,
     formErrorMessage,
     isSubmitting,
     optimisticStreamItems,
     draftAgent,
-    setPromptText,
     handleCreateFromInput,
   } = useDraftAgentCreateFlow<Agent, AgentSnapshotPayload>({
     draftId,
@@ -233,12 +240,14 @@ export function WorkspaceDraftAgentTab({
             onSubmitMessage={handleCreateFromInput}
             isSubmitLoading={isSubmitting}
             blurOnSubmit={true}
-            value={promptValue}
-            onChangeText={setPromptText}
+            value={draftInput.text}
+            onChangeText={draftInput.setText}
+            images={draftInput.images}
+            onChangeImages={draftInput.setImages}
+            clearDraft={draftInput.clear}
             autoFocus={!isSubmitting}
             onAddImages={handleAddImagesCallback}
             commandDraftConfig={draftCommandConfig}
-            draftId={draftId}
             statusControls={{
               providerDefinitions,
               selectedProvider,

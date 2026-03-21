@@ -10,8 +10,6 @@ import { generateMessageId, type StreamItem } from '@/types/stream'
 import { AgentStatusBar, DraftAgentStatusBar, type DraftAgentStatusBarProps } from './agent-status-bar'
 import { useImageAttachmentPicker } from '@/hooks/use-image-attachment-picker'
 import { useSessionStore } from '@/stores/session-store'
-import { useDraftStore } from '@/stores/draft-store'
-import { buildDraftStoreKey } from '@/stores/draft-keys'
 import {
   MessageInput,
   type MessagePayload,
@@ -35,7 +33,6 @@ import {
   persistAttachmentFromFileUri,
 } from '@/attachments/service'
 import { resolveStatusControlMode } from '@/components/agent-input-area.status-controls'
-import { shouldSkipDraftPersist } from '@/components/agent-input-area.draft-persist-guard'
 import { markScrollInvestigationRender } from '@/utils/scroll-jank-investigation'
 import { useKeyboardShiftStyle } from '@/hooks/use-keyboard-shift-style'
 import { useKeyboardActionHandler } from '@/hooks/use-keyboard-action-handler'
@@ -47,17 +44,21 @@ type QueuedMessage = {
   images?: ImageAttachment[]
 }
 
+type ImageListUpdater = ImageAttachment[] | ((prev: ImageAttachment[]) => ImageAttachment[])
+
 interface AgentInputAreaProps {
   agentId: string
   serverId: string
-  draftId?: string
   onSubmitMessage?: (payload: MessagePayload) => Promise<void>
   /** Externally controlled loading state. When true, disables the submit button. */
   isSubmitLoading?: boolean
   /** When true, blurs the input immediately when submitting. */
   blurOnSubmit?: boolean
-  value?: string
-  onChangeText?: (text: string) => void
+  value: string
+  onChangeText: (text: string) => void
+  images: ImageAttachment[]
+  onChangeImages: (updater: ImageListUpdater) => void
+  clearDraft: (lifecycle: 'sent' | 'abandoned') => void
   /** When true, auto-focuses the text input on web. */
   autoFocus?: boolean
   /** Callback to expose the addImages function to parent components */
@@ -80,12 +81,14 @@ const MOBILE_MESSAGE_PLACEHOLDER = 'Message, @files, /commands'
 export function AgentInputArea({
   agentId,
   serverId,
-  draftId,
   onSubmitMessage,
   isSubmitLoading = false,
   blurOnSubmit = false,
   value,
   onChangeText,
+  images,
+  onChangeImages,
+  clearDraft,
   autoFocus = false,
   onAddImages,
   commandDraftConfig,
@@ -114,14 +117,6 @@ export function AgentInputArea({
 
   const agent = useSessionStore((state) => state.sessions[serverId]?.agents?.get(agentId))
 
-  const draftStoreKey = buildDraftStoreKey({ serverId, agentId, draftId })
-  const getDraftInput = useDraftStore((state) => state.getDraftInput)
-  const hydrateDraftInput = useDraftStore((state) => state.hydrateDraftInput)
-  const saveDraftInput = useDraftStore((state) => state.saveDraftInput)
-  const clearDraftInput = useDraftStore((state) => state.clearDraftInput)
-  const beginDraftGeneration = useDraftStore((state) => state.beginDraftGeneration)
-  const isDraftGenerationCurrent = useDraftStore((state) => state.isDraftGenerationCurrent)
-
   const queuedMessagesRaw = useSessionStore((state) =>
     state.sessions[serverId]?.queuedMessages?.get(agentId)
   )
@@ -131,7 +126,6 @@ export function AgentInputArea({
   const setAgentStreamTail = useSessionStore((state) => state.setAgentStreamTail)
   const setAgentStreamHead = useSessionStore((state) => state.setAgentStreamHead)
 
-  const [internalInput, setInternalInput] = useState('')
   const isDesktopWebBreakpoint =
     Platform.OS === 'web' &&
     UnistylesRuntime.breakpoint !== 'xs' &&
@@ -139,17 +133,16 @@ export function AgentInputArea({
   const messagePlaceholder = isDesktopWebBreakpoint
     ? DESKTOP_MESSAGE_PLACEHOLDER
     : MOBILE_MESSAGE_PLACEHOLDER
-  const userInput = value ?? internalInput
-  const setUserInput = onChangeText ?? setInternalInput
+  const userInput = value
+  const setUserInput = onChangeText
+  const selectedImages = images
+  const setSelectedImages = onChangeImages
   const [cursorIndex, setCursorIndex] = useState(0)
   const [isProcessing, setIsProcessing] = useState(false)
-  const [selectedImages, setSelectedImages] = useState<ImageAttachment[]>([])
   const [isCancellingAgent, setIsCancellingAgent] = useState(false)
   const [sendError, setSendError] = useState<string | null>(null)
   const [isMessageInputFocused, setIsMessageInputFocused] = useState(false)
   const messageInputRef = useRef<MessageInputRef>(null)
-  const draftGenerationRef = useRef(0)
-  const hydratedGenerationRef = useRef(0)
   const keyboardHandlerIdRef = useRef(
     `message-input:${serverId}:${agentId}:${Math.random().toString(36).slice(2)}`
   )
@@ -187,7 +180,7 @@ export function AgentInputArea({
   // Expose addImages function to parent for drag-and-drop support
   const addImages = useCallback((images: ImageAttachment[]) => {
     setSelectedImages((prev) => [...prev, ...images])
-  }, [])
+  }, [setSelectedImages])
 
   useEffect(() => {
     onAddImages?.(addImages)
@@ -326,10 +319,7 @@ export function AgentInputArea({
       return next
     })
 
-    const isControlled = value !== undefined
-    if (!isControlled) {
-      setUserInput('')
-    }
+    setUserInput('')
     setSelectedImages([])
   }
 
@@ -354,28 +344,20 @@ export function AgentInputArea({
     // Save values so we can restore on error.
     const savedImages = imageAttachments
     if (!onSubmitMessageRef.current) {
-      if (value !== undefined) {
-        onChangeText?.('')
-      } else {
-        setUserInput('')
-      }
+      setUserInput('')
+      setSelectedImages([])
     }
-    setSelectedImages([])
     setSendError(null)
     setIsProcessing(true)
 
     try {
       await submitMessage(trimmedMessage, imageAttachments)
-      clearDraftInput({ draftKey: draftStoreKey, lifecycle: 'sent' })
+      clearDraft('sent')
     } catch (error) {
       console.error('[AgentInput] Failed to send message:', error)
       // Restore input so the user never loses their message
       if (!onSubmitMessageRef.current) {
-        if (value !== undefined) {
-          onChangeText?.(trimmedMessage)
-        } else {
-          setUserInput(trimmedMessage)
-        }
+        setUserInput(trimmedMessage)
       }
       if (savedImages) {
         setSelectedImages(savedImages)
@@ -433,109 +415,6 @@ export function AgentInputArea({
       setIsCancellingAgent(false)
     }
   }, [isAgentRunning, isConnected])
-
-  // Hydrate draft only when switching agents (uncontrolled mode only)
-  const isControlled = value !== undefined
-  useEffect(() => {
-    // Skip draft hydration for controlled inputs - parent manages state
-    if (isControlled) {
-      return
-    }
-    const generation = beginDraftGeneration(draftStoreKey)
-    draftGenerationRef.current = generation
-    hydratedGenerationRef.current = 0
-    setUserInput('')
-    setSelectedImages([])
-    let cancelled = false
-
-    void (async () => {
-      const draft = await hydrateDraftInput(draftStoreKey)
-      if (cancelled) {
-        return
-      }
-      if (!isDraftGenerationCurrent({ draftKey: draftStoreKey, generation })) {
-        return
-      }
-      if (!draft) {
-        hydratedGenerationRef.current = generation
-        return
-      }
-
-      setUserInput(draft.text)
-      setSelectedImages(draft.images)
-      hydratedGenerationRef.current = generation
-    })()
-
-    return () => {
-      cancelled = true
-    }
-  }, [
-    beginDraftGeneration,
-    draftStoreKey,
-    hydrateDraftInput,
-    isControlled,
-    isDraftGenerationCurrent,
-    setUserInput,
-  ])
-
-  // Persist drafts into the shared session store with change detection to avoid redundant work
-  useEffect(() => {
-    const currentGeneration = draftGenerationRef.current
-    const isCurrentGeneration =
-      currentGeneration > 0
-        ? isDraftGenerationCurrent({ draftKey: draftStoreKey, generation: currentGeneration })
-        : true
-    if (
-      shouldSkipDraftPersist({
-        isControlled,
-        currentGeneration,
-        hydratedGeneration: hydratedGenerationRef.current,
-        isCurrentGeneration,
-      })
-    ) {
-      return
-    }
-
-    const existing = getDraftInput(draftStoreKey)
-    const isSameText = existing?.text === userInput
-    const existingImages: ImageAttachment[] = existing?.images ?? []
-    const isSameImages =
-      existingImages.length === selectedImages.length &&
-      existingImages.every((img, idx) => {
-        return (
-          img.id === selectedImages[idx]?.id &&
-          img.mimeType === selectedImages[idx]?.mimeType &&
-          img.storageType === selectedImages[idx]?.storageType &&
-          img.storageKey === selectedImages[idx]?.storageKey
-        )
-      })
-
-    if (isSameText && isSameImages) {
-      return
-    }
-
-    const hasContent = userInput.trim().length > 0 || selectedImages.length > 0
-    if (!hasContent) {
-      if (existing) {
-        clearDraftInput({ draftKey: draftStoreKey, lifecycle: 'abandoned' })
-      }
-      return
-    }
-
-    saveDraftInput({
-      draftKey: draftStoreKey,
-      draft: { text: userInput, images: selectedImages },
-    })
-  }, [
-    clearDraftInput,
-    draftStoreKey,
-    getDraftInput,
-    isControlled,
-    isDraftGenerationCurrent,
-    saveDraftInput,
-    selectedImages,
-    userInput,
-  ])
 
   const handleKeyboardAction = useCallback((action: KeyboardActionDefinition): boolean => {
     if (!isScreenFocused) {
