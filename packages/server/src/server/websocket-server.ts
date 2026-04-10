@@ -639,6 +639,7 @@ export class VoiceAssistantWebSocketServer {
       paseoHome: this.paseoHome,
       agentManager: this.agentManager,
       agentStorage: this.agentStorage,
+      mcpServerStore: this.mcpServerStore,
       projectRegistry: this.projectRegistry,
       workspaceRegistry: this.workspaceRegistry,
       chatService: this.chatService,
