@@ -104,6 +104,7 @@ export class McpServerStore {
       description: input.description,
     };
 
+    this.cache.set(record.id, record);
     await this.save();
 
     return record;
