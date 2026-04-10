@@ -49,12 +49,6 @@ import {
 } from "../server/loop/rpc-schemas.js";
 import type { LiteralUnion } from "./literal-union.js";
 import type {
-  McpServerRecord,
-  McpServerConfig,
-  CreateMcpServerInput,
-  UpdateMcpServerInput,
-} from "../server/mcp/mcp-server-types.js";
-import type {
   AgentCapabilityFlags,
   AgentModelDefinition,
   AgentMode,
@@ -2732,7 +2726,7 @@ export const CreateMcpServerResponseMessageSchema = z.object({
   type: z.literal("create_mcp_server_response"),
   payload: z.object({
     requestId: z.string(),
-    server: McpServerRecordSchema,
+    server: McpServerRecordSchema.nullable(),
     error: z.string().nullable(),
   }),
 });

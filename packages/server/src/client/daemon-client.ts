@@ -62,15 +62,10 @@ import type {
   SessionInboundMessage,
   SessionOutboundMessage,
   EditorTargetId,
-  ListMcpServersRequestMessage,
   ListMcpServersResponse,
-  CreateMcpServerRequestMessage,
   CreateMcpServerResponse,
-  UpdateMcpServerRequestMessage,
   UpdateMcpServerResponse,
-  DeleteMcpServerRequestMessage,
   DeleteMcpServerResponse,
-  ToggleMcpServerRequestMessage,
   ToggleMcpServerResponse,
 } from "../shared/messages.js";
 import type {

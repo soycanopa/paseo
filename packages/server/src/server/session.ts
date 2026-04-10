@@ -405,7 +405,7 @@ export type SessionOptions = {
   paseoHome: string;
   agentManager: AgentManager;
   agentStorage: AgentStorage;
-  mcpServerStore: McpServerStore;
+  mcpServerStore?: McpServerStore;
   projectRegistry: ProjectRegistry;
   workspaceRegistry: WorkspaceRegistry;
   chatService: FileBackedChatService;
@@ -591,7 +591,7 @@ export class Session {
   private agentTools: ToolSet | null = null;
   private agentManager: AgentManager;
   private readonly agentStorage: AgentStorage;
-  private readonly mcpServerStore: McpServerStore;
+  private readonly mcpServerStore: McpServerStore | undefined;
   private readonly projectRegistry: ProjectRegistry;
   private readonly workspaceRegistry: WorkspaceRegistry;
   private readonly chatService: FileBackedChatService;
@@ -8120,6 +8120,17 @@ export class Session {
   private async handleListMcpServersRequest(
     request: Extract<SessionInboundMessage, { type: "list_mcp_servers_request" }>,
   ): Promise<void> {
+    if (!this.mcpServerStore) {
+      this.emit({
+        type: "list_mcp_servers_response",
+        payload: {
+          requestId: request.requestId,
+          servers: [],
+          error: "MCP server store not available",
+        },
+      });
+      return;
+    }
     try {
       const servers = await this.mcpServerStore.list();
       this.emit({
@@ -8145,6 +8156,17 @@ export class Session {
   private async handleCreateMcpServerRequest(
     request: Extract<SessionInboundMessage, { type: "create_mcp_server_request" }>,
   ): Promise<void> {
+    if (!this.mcpServerStore) {
+      this.emit({
+        type: "create_mcp_server_response",
+        payload: {
+          requestId: request.payload.requestId,
+          server: null,
+          error: "MCP server store not available",
+        },
+      });
+      return;
+    }
     try {
       const server = await this.mcpServerStore.add(request.payload.server);
       this.emit({
@@ -8170,6 +8192,17 @@ export class Session {
   private async handleUpdateMcpServerRequest(
     request: Extract<SessionInboundMessage, { type: "update_mcp_server_request" }>,
   ): Promise<void> {
+    if (!this.mcpServerStore) {
+      this.emit({
+        type: "update_mcp_server_response",
+        payload: {
+          requestId: request.payload.requestId,
+          server: null,
+          error: "MCP server store not available",
+        },
+      });
+      return;
+    }
     try {
       const server = await this.mcpServerStore.update(request.payload.id, request.payload.updates);
       if (!server) {
@@ -8206,6 +8239,18 @@ export class Session {
   private async handleDeleteMcpServerRequest(
     request: Extract<SessionInboundMessage, { type: "delete_mcp_server_request" }>,
   ): Promise<void> {
+    if (!this.mcpServerStore) {
+      this.emit({
+        type: "delete_mcp_server_response",
+        payload: {
+          requestId: request.payload.requestId,
+          id: request.payload.id,
+          deleted: false,
+          error: "MCP server store not available",
+        },
+      });
+      return;
+    }
     try {
       const deleted = await this.mcpServerStore.delete(request.payload.id);
       if (!deleted) {
@@ -8245,6 +8290,18 @@ export class Session {
   private async handleToggleMcpServerRequest(
     request: Extract<SessionInboundMessage, { type: "toggle_mcp_server_request" }>,
   ): Promise<void> {
+    if (!this.mcpServerStore) {
+      this.emit({
+        type: "toggle_mcp_server_response",
+        payload: {
+          requestId: request.payload.requestId,
+          id: request.payload.id,
+          enabled: request.payload.enabled,
+          error: "MCP server store not available",
+        },
+      });
+      return;
+    }
     try {
       const success = request.payload.enabled
         ? await this.mcpServerStore.enable(request.payload.id)

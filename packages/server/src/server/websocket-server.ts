@@ -257,7 +257,7 @@ export class VoiceAssistantWebSocketServer {
   private readonly agentProviderRuntimeSettings: AgentProviderRuntimeSettingsMap | undefined;
   private readonly providerSnapshotManager: ProviderSnapshotManager;
   private readonly onLifecycleIntent: ((intent: SessionLifecycleIntent) => void) | null;
-  private readonly mcpServerStore: McpServerStore;
+  private readonly mcpServerStore: McpServerStore | undefined;
   private serverCapabilities: ServerCapabilities | undefined;
   private runtimeWindowStartedAt = Date.now();
   private readonly runtimeCounters: WebSocketRuntimeCounters = {
@@ -312,7 +312,7 @@ export class VoiceAssistantWebSocketServer {
     loopService?: LoopService,
     scheduleService?: ScheduleService,
     checkoutDiffManager?: CheckoutDiffManager,
-    mcpServerStore: McpServerStore,
+    mcpServerStore?: McpServerStore,
   ) {
     this.logger = logger.child({ module: "websocket-server" });
     this.serverId = serverId;
