@@ -135,7 +135,29 @@ describe("McpServerStore", () => {
       type: "stdio",
       config: { type: "stdio", command: "echo" },
       enabled: false,
+      description: "Original description",
     });
+
+    // Wait to ensure updatedAt changes
+    await new Promise(resolve => setTimeout(resolve, 1));
+
+    const updated = await storage.update(original.id, {
+      name: "updated-name",
+      enabled: true,
+      description: "Updated description",
+      tags: ["updated"],
+    });
+
+    expect(updated).not.toBeNull();
+    expect(updated).toMatchObject({
+      id: original.id,
+      name: "updated-name",
+      enabled: true,
+      description: "Updated description",
+    });
+    expect(updated!.updatedAt).not.toBe(original.updatedAt);
+    expect(updated!.createdAt).toBe(original.createdAt);
+  });
 
     const updated = await storage.update(original.id, {
       name: "updated-name",
