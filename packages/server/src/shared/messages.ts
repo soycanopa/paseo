@@ -1389,6 +1389,69 @@ export const CaptureTerminalRequestSchema = z.object({
   requestId: z.string(),
 });
 
+// ============================================================================
+// MCP Server Messages (inbound)
+// ============================================================================
+
+export const ListMcpServersRequestMessageSchema = z.object({
+  type: z.literal("list_mcp_servers_request"),
+  requestId: z.string(),
+});
+
+export const CreateMcpServerRequestMessageSchema = z.object({
+  type: z.literal("create_mcp_server_request"),
+  payload: z.object({
+    requestId: z.string(),
+    server: z.object({
+      name: z.string(),
+      type: z.enum(["stdio", "http", "sse"]),
+      config: McpServerConfigSchema,
+      enabled: z.boolean().optional(),
+      tags: z.array(z.string()).optional(),
+      description: z.string().optional(),
+    }),
+  }),
+});
+
+export const UpdateMcpServerRequestMessageSchema = z.object({
+  type: z.literal("update_mcp_server_request"),
+  payload: z.object({
+    requestId: z.string(),
+    id: z.string(),
+    updates: z
+      .object({
+        name: z.string().optional(),
+        type: z.enum(["stdio", "http", "sse"]).optional(),
+        config: McpServerConfigSchema.optional(),
+        enabled: z.boolean().optional(),
+        tags: z.array(z.string()).optional(),
+        description: z.string().optional(),
+      })
+      .partial(),
+  }),
+});
+
+export const DeleteMcpServerRequestMessageSchema = z.object({
+  type: z.literal("delete_mcp_server_request"),
+  payload: z.object({
+    requestId: z.string(),
+    id: z.string(),
+  }),
+});
+
+export const ToggleMcpServerRequestMessageSchema = z.object({
+  type: z.literal("toggle_mcp_server_request"),
+  payload: z.object({
+    requestId: z.string(),
+    id: z.string(),
+    enabled: z.boolean(),
+  }),
+});
+
+// ============================================================================
+// Session Inbound Message Schema
+// ============================================================================
+
 export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   VoiceAudioChunkMessageSchema,
   AbortRequestMessageSchema,
@@ -2507,124 +2570,6 @@ export const ProviderDiagnosticResponseMessageSchema = z.object({
   }),
 });
 
-// ============================================================================
-// MCP Server Messages
-// ============================================================================
-
-const McpServerRecordSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  type: z.enum(["stdio", "http", "sse"]),
-  config: McpServerConfigSchema,
-  enabled: z.boolean(),
-  createdAt: z.string(),
-  updatedAt: z.string(),
-  tags: z.array(z.string()).optional(),
-  description: z.string().optional(),
-});
-
-export const ListMcpServersRequestMessageSchema = z.object({
-  type: z.literal("list_mcp_servers_request"),
-  requestId: z.string(),
-});
-
-export const ListMcpServersResponseMessageSchema = z.object({
-  type: z.literal("list_mcp_servers_response"),
-  payload: z.object({
-    requestId: z.string(),
-    servers: z.array(McpServerRecordSchema),
-    error: z.string().nullable(),
-  }),
-});
-
-export const CreateMcpServerRequestMessageSchema = z.object({
-  type: z.literal("create_mcp_server_request"),
-  payload: z.object({
-    requestId: z.string(),
-    server: z.object({
-      name: z.string(),
-      type: z.enum(["stdio", "http", "sse"]),
-      config: McpServerConfigSchema,
-      enabled: z.boolean().optional(),
-      tags: z.array(z.string()).optional(),
-      description: z.string().optional(),
-    }),
-  }),
-});
-
-export const CreateMcpServerResponseMessageSchema = z.object({
-  type: z.literal("create_mcp_server_response"),
-  payload: z.object({
-    requestId: z.string(),
-    server: McpServerRecordSchema,
-    error: z.string().nullable(),
-  }),
-});
-
-export const UpdateMcpServerRequestMessageSchema = z.object({
-  type: z.literal("update_mcp_server_request"),
-  payload: z.object({
-    requestId: z.string(),
-    id: z.string(),
-    updates: z
-      .object({
-        name: z.string().optional(),
-        type: z.enum(["stdio", "http", "sse"]).optional(),
-        config: McpServerConfigSchema.optional(),
-        enabled: z.boolean().optional(),
-        tags: z.array(z.string()).optional(),
-        description: z.string().optional(),
-      })
-      .partial(),
-  }),
-});
-
-export const UpdateMcpServerResponseMessageSchema = z.object({
-  type: z.literal("update_mcp_server_response"),
-  payload: z.object({
-    requestId: z.string(),
-    server: McpServerRecordSchema.nullable(),
-    error: z.string().nullable(),
-  }),
-});
-
-export const DeleteMcpServerRequestMessageSchema = z.object({
-  type: z.literal("delete_mcp_server_request"),
-  payload: z.object({
-    requestId: z.string(),
-    id: z.string(),
-  }),
-});
-
-export const DeleteMcpServerResponseMessageSchema = z.object({
-  type: z.literal("delete_mcp_server_response"),
-  payload: z.object({
-    requestId: z.string(),
-    id: z.string(),
-    deleted: z.boolean(),
-    error: z.string().nullable(),
-  }),
-});
-
-export const ToggleMcpServerRequestMessageSchema = z.object({
-  type: z.literal("toggle_mcp_server_request"),
-  payload: z.object({
-    requestId: z.string(),
-    id: z.string(),
-    enabled: z.boolean(),
-  }),
-});
-
-export const ToggleMcpServerResponseMessageSchema = z.object({
-  type: z.literal("toggle_mcp_server_response"),
-  payload: z.object({
-    requestId: z.string(),
-    id: z.string(),
-    enabled: z.boolean(),
-    error: z.string().nullable(),
-  }),
-});
-
 const AgentSlashCommandSchema = z.object({
   name: z.string(),
   description: z.string(),
@@ -2755,6 +2700,69 @@ export const TerminalStreamExitSchema = z.object({
   type: z.literal("terminal_stream_exit"),
   payload: z.object({
     terminalId: z.string(),
+  }),
+});
+
+// ============================================================================
+// MCP Server Messages (outbound)
+// ============================================================================
+
+const McpServerRecordSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  type: z.enum(["stdio", "http", "sse"]),
+  config: McpServerConfigSchema,
+  enabled: z.boolean(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  tags: z.array(z.string()).optional(),
+  description: z.string().optional(),
+});
+
+export const ListMcpServersResponseMessageSchema = z.object({
+  type: z.literal("list_mcp_servers_response"),
+  payload: z.object({
+    requestId: z.string(),
+    servers: z.array(McpServerRecordSchema),
+    error: z.string().nullable(),
+  }),
+});
+
+export const CreateMcpServerResponseMessageSchema = z.object({
+  type: z.literal("create_mcp_server_response"),
+  payload: z.object({
+    requestId: z.string(),
+    server: McpServerRecordSchema,
+    error: z.string().nullable(),
+  }),
+});
+
+export const UpdateMcpServerResponseMessageSchema = z.object({
+  type: z.literal("update_mcp_server_response"),
+  payload: z.object({
+    requestId: z.string(),
+    server: McpServerRecordSchema.nullable(),
+    error: z.string().nullable(),
+  }),
+});
+
+export const DeleteMcpServerResponseMessageSchema = z.object({
+  type: z.literal("delete_mcp_server_response"),
+  payload: z.object({
+    requestId: z.string(),
+    id: z.string(),
+    deleted: z.boolean(),
+    error: z.string().nullable(),
+  }),
+});
+
+export const ToggleMcpServerResponseMessageSchema = z.object({
+  type: z.literal("toggle_mcp_server_response"),
+  payload: z.object({
+    requestId: z.string(),
+    id: z.string(),
+    enabled: z.boolean(),
+    error: z.string().nullable(),
   }),
 });
 

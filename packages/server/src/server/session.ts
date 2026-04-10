@@ -8150,7 +8150,7 @@ export class Session {
       this.emit({
         type: "create_mcp_server_response",
         payload: {
-          requestId: request.requestId,
+          requestId: request.payload.requestId,
           server,
           error: null,
         },
@@ -8159,7 +8159,7 @@ export class Session {
       this.emit({
         type: "create_mcp_server_response",
         payload: {
-          requestId: request.requestId,
+          requestId: request.payload.requestId,
           server: null,
           error: error?.message ?? "Failed to create MCP server",
         },
@@ -8176,7 +8176,7 @@ export class Session {
         this.emit({
           type: "update_mcp_server_response",
           payload: {
-            requestId: request.requestId,
+            requestId: request.payload.requestId,
             server: null,
             error: "MCP server not found",
           },
@@ -8186,7 +8186,7 @@ export class Session {
       this.emit({
         type: "update_mcp_server_response",
         payload: {
-          requestId: request.requestId,
+          requestId: request.payload.requestId,
           server,
           error: null,
         },
@@ -8195,7 +8195,7 @@ export class Session {
       this.emit({
         type: "update_mcp_server_response",
         payload: {
-          requestId: request.requestId,
+          requestId: request.payload.requestId,
           server: null,
           error: error?.message ?? "Failed to update MCP server",
         },
@@ -8212,7 +8212,7 @@ export class Session {
         this.emit({
           type: "delete_mcp_server_response",
           payload: {
-            requestId: request.requestId,
+            requestId: request.payload.requestId,
             id: request.payload.id,
             deleted: false,
             error: "MCP server not found",
@@ -8223,7 +8223,7 @@ export class Session {
       this.emit({
         type: "delete_mcp_server_response",
         payload: {
-          requestId: request.requestId,
+          requestId: request.payload.requestId,
           id: request.payload.id,
           deleted: true,
           error: null,
@@ -8233,7 +8233,7 @@ export class Session {
       this.emit({
         type: "delete_mcp_server_response",
         payload: {
-          requestId: request.requestId,
+          requestId: request.payload.requestId,
           id: request.payload.id,
           deleted: false,
           error: error?.message ?? "Failed to delete MCP server",
@@ -8253,7 +8253,7 @@ export class Session {
         this.emit({
           type: "toggle_mcp_server_response",
           payload: {
-            requestId: request.requestId,
+            requestId: request.payload.requestId,
             id: request.payload.id,
             enabled: request.payload.enabled,
             error: "MCP server not found",
@@ -8264,7 +8264,7 @@ export class Session {
       this.emit({
         type: "toggle_mcp_server_response",
         payload: {
-          requestId: request.requestId,
+          requestId: request.payload.requestId,
           id: request.payload.id,
           enabled: request.payload.enabled,
           error: null,
@@ -8274,7 +8274,7 @@ export class Session {
       this.emit({
         type: "toggle_mcp_server_response",
         payload: {
-          requestId: request.requestId,
+          requestId: request.payload.requestId,
           id: request.payload.id,
           enabled: request.payload.enabled,
           error: error?.message ?? "Failed to toggle MCP server",
